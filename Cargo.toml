@@ -1,0 +1,30 @@
+[package]
+name    = "darkcrypt-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "darkcrypt-rs"
+path = "src/main.rs"
+
+[dependencies]
+# Pure-Rust crypto stack, no_std-pinned (no bcrypt.dll, no bcryptprimitives.dll).
+aes    = { version = "0.8",  default-features = false }
+cbc    = { version = "0.1",  default-features = false, features = ["block-padding"] }
+hmac   = { version = "0.12", default-features = false }
+sha2   = { version = "0.10", default-features = false, features = ["force-soft"] }
+subtle = { version = "2.6",  default-features = false, features = ["i128"] }
+
+[profile.release]
+opt-level       = "z"
+lto             = true
+codegen-units   = 1
+panic           = "abort"
+strip           = true
+overflow-checks = false
+
+# dev profile MUST also abort — otherwise `cargo build` (no --release)
+# pulls panic_unwind + libgcc_eh which we just unlinked via -nodefaultlibs.
+[profile.dev]
+panic = "abort"

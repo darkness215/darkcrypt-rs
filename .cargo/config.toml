@@ -1,0 +1,29 @@
+# Cargo configuration — no_std + no_main + mingw-w64 cross from Linux.
+#
+# IMPORTANT: PE hardening link args live in build.rs (not here), because any
+# RUSTFLAGS env export would silently REPLACE this rustflags block and drop
+# every hardening flag. build.rs's `cargo:rustc-link-arg=` composes additively
+# and survives RUSTFLAGS overrides.
+#
+# Only non-link rustc flags remain here. They are also vulnerable to RUSTFLAGS
+# replacement, but losing them produces a slightly larger PE and no ASLR shift;
+# losing build.rs's link args produces a 400KB PE with the full mingw CRT.
+#
+# Pairs with:
+#   Cargo.toml → [profile.release] panic = "abort", strip = true, lto = true
+#                [profile.dev]     panic = "abort"
+#   build.rs   → cargo:rustc-link-arg= for all PE hardening flags
+#   src/main.rs → #![no_std] + #![no_main] + #[panic_handler]
+#                 + #[no_mangle] pub unsafe extern "C" fn mainCRTStartup() -> !
+
+[build]
+target = "x86_64-pc-windows-gnu"
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+rustflags = [
+    # Non-link rustc flags only — link args live in build.rs.
+    "-C", "force-frame-pointers=no",   # smaller prologues
+    "-C", "relocation-model=pic",      # required alongside --dynamicbase for ASLR
+]

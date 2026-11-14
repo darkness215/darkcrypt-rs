@@ -1,0 +1,27 @@
+# Cargo build output
+target/
+Cargo.lock.bak
+
+# Shipping artifacts (keep the folder, not the binaries)
+artifacts/*.exe
+artifacts/*.pdb
+
+# Build + smoke logs
+build.log
+smoke*.out
+smoke*.err
+
+# IDE + OS cruft
+.vscode/
+.idea/
+.rustc_info.json
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# NEVER commit payload or key material
+aes.encrypted
+dc_payload.bin
+*.key
+*_keys.txt
