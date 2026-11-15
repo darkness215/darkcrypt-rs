@@ -33,7 +33,7 @@ Or native on an x64 Windows host: `.\scripts\build.ps1`.
 IOC gate:
 
 ```bash
-python3 ../darkcrypt/tools/check_iocs.py artifacts/darkcrypt-rs.exe
+python3 tools/check_iocs.py artifacts/darkcrypt-rs.exe
 # expected: 1 finding (SHA-256 IV constants, accepted baseline)
 ```
 
