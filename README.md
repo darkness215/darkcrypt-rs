@@ -77,7 +77,6 @@ python3 tools/check_iocs.py artifacts/darkcrypt-rs.exe
 - The 1000 ms `io::sleep` between `ResumeThread` and `finish_amsi` is load-bearing. Never remove it.
 - Never export `RUSTFLAGS` when building — it replaces `[target.*].rustflags`. PE link args are in `build.rs` as `cargo:rustc-link-arg=` so they survive; the rest of `config.toml` doesn't.
 - Dev profile must `panic = "abort"` (already set) — else `cargo build` drags in `libgcc_eh`.
-- Start every run from a clean snapshot.
 
 ## Cross-port
 
