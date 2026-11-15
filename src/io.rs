@@ -70,13 +70,6 @@ pub unsafe fn argv_one() -> *const u8 {
     p
 }
 
-// Length of a NUL-terminated ASCII string the live cmdline hands us.
-pub unsafe fn cstr_len(mut p: *const u8) -> usize {
-    let start = p;
-    while *p != 0 { p = p.add(1); }
-    p as usize - start as usize
-}
-
 // ================================================================
 // read_file — open + size + read + close through hash-resolved kernel32.
 // path_a must be NUL-terminated ASCII (live in GetCommandLineA's buffer).

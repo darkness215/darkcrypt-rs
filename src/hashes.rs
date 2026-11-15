@@ -51,3 +51,13 @@ pub const GET_COMMAND_LINE_A:    u32 = 0xB511FC4D;
 pub const CREATE_FILE_A:         u32 = 0xEB96C5FA;
 pub const READ_FILE:             u32 = 0x71019921;
 pub const GET_FILE_SIZE_EX:      u32 = 0xE417967D;
+
+// ---- winhttp.dll — runtime-only (LoadLibraryW'd, never a PE import) ----
+pub const WH_OPEN:               u32 = 0x5E4F39E5;  // WinHttpOpen
+pub const WH_CONNECT:            u32 = 0x7242C17D;  // WinHttpConnect
+pub const WH_OPEN_REQUEST:       u32 = 0xEAB7B9CE;  // WinHttpOpenRequest
+pub const WH_SEND_REQUEST:       u32 = 0xB183FAA6;  // WinHttpSendRequest
+pub const WH_RECEIVE_RESPONSE:   u32 = 0x146C4925;  // WinHttpReceiveResponse
+pub const WH_QUERY_AVAIL:        u32 = 0x34CB8684;  // WinHttpQueryDataAvailable
+pub const WH_READ_DATA:          u32 = 0x7195E4E9;  // WinHttpReadData
+pub const WH_CLOSE:              u32 = 0x36220CD5;  // WinHttpCloseHandle

